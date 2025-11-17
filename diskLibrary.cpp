@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include "diskLibrary.h"
+#include "file.h"
 
 FileSystemDisk::FileSystemDisk(std::string filesystemName)
 {
@@ -98,8 +99,12 @@ void FileSystemDisk::AddFile(FILE_INFO file)
         exit(1);
     }
 
-    unsigned int block = 200; // Temporary test value, update to hash function later
-    
+    unsigned int block = file.identifier % MAX_FILES; // Temporary test value, update to hash function later
+    // Collision handling    
+    /*
+        if identifier = iterate through existing identifiers (or check for 1 in hash locations)
+        rerun for a new one
+    */
     this->UpdateBitmap(block, true);
     
     fileToAdd.close();
@@ -108,8 +113,8 @@ void FileSystemDisk::RemoveFile(FILE_INFO file)
 {
     std::string filename = file.name;
     fs::path filePath = this->diskPath / file.name;
-    unsigned int block = 200; // Temporary test value, update to hash function later
-
+    unsigned int block = file.identifier % static_cast<unsigned long>(MAX_FILES); // Temporary test value, update to hash function later
+    // Check for file
     if (!fs::remove(filePath)) {
         std::cerr << "Failed to remove file.";
         exit(1);

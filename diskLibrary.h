@@ -5,6 +5,7 @@
 #include <ctime>
 #include <filesystem>
 #include <string>
+#include "file.h"
 
 namespace fs = std::filesystem;
 
@@ -12,18 +13,6 @@ const int BLOCK_SIZE = 4096;
 const std::string DEFAULT_FS = "default";
 const int MAX_FILES = 255;
 
-struct FILE_INFO {
-    std::string name;
-    std::time_t timestamp;
-    size_t size;
-    unsigned int identifier; // Used for identifying location in filesystem
-    FILE_INFO* previousVersions;
-};
-
-struct FILE_ENTRY {
-    unsigned int identifier;
-    unsigned int block;
-};
 
 
 class FileSystemDisk {
