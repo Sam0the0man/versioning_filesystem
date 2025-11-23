@@ -9,10 +9,10 @@ struct FILE_INFO {
     std::time_t timestamp;
     size_t size;
     unsigned long identifier; // Used for identifying location in filesystem
-    FILE_INFO* prev;
-    FILE_INFO* next;
+    // FILE_INFO* prev;
+    // FILE_INFO* next;
 
-    FILE_INFO(std::string name, std::time_t timestamp);
+    // FILE_INFO(std::string name, std::time_t timestamp);
 };
 
 struct FILE_ENTRY {
