@@ -28,7 +28,7 @@ FileSystemDisk::FileSystemDisk(std::string filesystemName)
         LoadDisk();
     }
 
-    std::cout << this->fileBitmap << '\n';
+    // std::cout << this->fileBitmap << '\n';
 }
 
 void FileSystemDisk::CreateDisk()
@@ -90,9 +90,6 @@ void FileSystemDisk::LoadDisk()
     }
     file.close();
 }
-// void FileSystemDisk::SaveFile(FILE_INFO file) {
-//     this->AddFile(file);
-// }
 
 void FileSystemDisk::createFile(std::string filename) {
     FILE_INFO info = this->CreateFile(filename);
@@ -296,33 +293,210 @@ void FileSystemDisk::EditFile(FILE_INFO &file) {
         }
     }
 }
-// void FileSystemDisk::AddFile(FILE_INFO file)
-// { // Adds file to directory, updates bitmap, adds to table (hashing)
-//     std::string filename = file.name;
-//     std::ofstream fileToAdd;
-//     fileToAdd.open(this->diskPath / filename);
-
-//     if (!fileToAdd.is_open())
-//     {
-//         std::cerr << "Failed to add file.";
-//         exit(1);
-//     }
-
-//     unsigned int block = file.identifier % MAX_FILES;
-//     // Collision handling    
-//     /*
-//         if identifier = iterate through existing identifiers (or check for 1 in hash locations)
-//         rerun for a new one
-//     */
-//     this->UpdateBitmap(block, true);
-    
-//     fileToAdd.close();
-// }
 
 void FileSystemDisk::deleteFile(std::string filename) {
     FILE_INFO fileToDelete = this->CreateFile(filename);
     this->RemoveFile(fileToDelete);
 }
+void FileSystemDisk::listFiles() const {
+    this->ListFiles();
+}
+void FileSystemDisk::ListFiles() const {
+    for (const auto& entry: fs::directory_iterator(this->diskPath)) {
+        if (entry.is_directory()) {
+            std::cout << entry.path().filename().string() << '\n';
+        }
+    } 
+}
+void FileSystemDisk::viewFile(std::string filename, int version) const {
+    this->ViewFile(filename, version);
+}
+void FileSystemDisk::ViewFile(std::string filename, int version) const {
+    std::string command;
+    fs::path fileDir = this->diskPath / filename;
+    if (!fs::exists(fileDir)) {
+        std::cerr << "File does not exist.\n";
+        exit(1);
+    }
+    if (version == 0) {
+        // Output current
+        command = "cat '" + (fileDir / "current").string() + "'";
+        system(command.c_str());
+    } else {
+        int maxVersionNumber = 0;
+        try {
+            for (const auto& entry: fs::directory_iterator(fileDir)) {
+                if (entry.is_regular_file()) {
+                    try {
+                        int versionNum = std::stoi(entry.path().filename());
+                        if (maxVersionNumber < versionNum) {
+                            maxVersionNumber = versionNum;
+                        }
+                    } catch (const std::invalid_argument& e) {
+                        // Not a version number
+                    }
+                }
+            }
+        } catch (const fs::filesystem_error& e) {
+            std::cerr << "Failed to get files in directory.\n";
+        }
+        int versionCount = abs(version);
+        if (versionCount > maxVersionNumber) {
+            std::cerr << "Not an available version.\n";
+            exit(1);
+        }
+        fs::path reconstructionFile = fileDir / "reconstruction";
+        if (version < 0) {
+            // Output n versions before current
+            // Copy current file
+            command = "cp '" + (fileDir / "current").string() + "' '" + reconstructionFile.string() + "'";
+            system(command.c_str());
+            // Apply patches
+            for (int i = 0; i < versionCount; ++i) {
+                // Patch from restoration to maxVersionCount - i
+                command = "patch -s -R '" + reconstructionFile.string() + "' < '" + (fileDir / std::to_string(maxVersionNumber - i)).string() + "'";
+                system(command.c_str());
+            }
+        } else {
+            // Output n versions after initial
+            // Copy initial file
+            command = "cp '" + (fileDir / "0").string() + "' '" + reconstructionFile.string() + "'";
+            system(command.c_str());
+            // Apply patches
+            for (int i = 1; i <= versionCount; ++i) {
+                // Patch from restoration to i
+                command = "patch -s '" + reconstructionFile.string() + "' '" + (fileDir / std::to_string(i)).string() + "'";
+                system(command.c_str());
+            }
+        }
+        // Output reconstructed file
+        command = "cat '" + reconstructionFile.string() + "'";
+        system(command.c_str());
+        
+        // Cleanup
+        remove(reconstructionFile.c_str());
+    }
+}
+
+void FileSystemDisk::viewAllVersions(std::string filename) const {
+    fs::path fileDir = this->diskPath / filename;
+    int maxVersionNumber = 0;
+    try {
+        for (const auto& entry: fs::directory_iterator(fileDir)) {
+            if (entry.is_regular_file()) {
+                try {
+                    int versionNum = std::stoi(entry.path().filename());
+                    if (maxVersionNumber < versionNum) {
+                        maxVersionNumber = versionNum;
+                    }
+                } catch (const std::invalid_argument& e) {
+                    // Not a version number
+                }
+            }
+        }
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Failed to get files in directory.\n";
+    } 
+    std::string command;
+    fs::path reconstructionFile = fileDir / "reconstruction";
+    command = "cp '" + (fileDir / "0").string() + "' '" + reconstructionFile.string() + "'";
+    system(command.c_str());
+    // Apply patches
+    for (int i = 1; i <= maxVersionNumber; ++i) {
+        // Patch from restoration to i
+        command = "patch -s '" + reconstructionFile.string() + "' '" + (fileDir / std::to_string(i)).string() + "'";
+        system(command.c_str());
+        // Output version and contents
+        std::cout << i << ": \n";
+        command = "cat '" + reconstructionFile.string() + "'";
+        system(command.c_str());
+    }
+
+    // Cleanup
+    remove(reconstructionFile.c_str());
+
+}
+
+void FileSystemDisk::restoreFile(std::string filename, int version) {
+    this->RestoreFile(filename, version);
+}
+void FileSystemDisk::RestoreFile(std::string filename, int version) {
+    std::string command;
+    fs::path fileDir = this->diskPath / filename;
+    int newLatestVersion;
+    if (!fs::exists(fileDir)) {
+        std::cerr << "File does not exist.\n";
+        exit(1);
+    }
+    if (version == 0) {
+        // Output current
+        std::cout << "Same file version";
+        return;
+    } else {
+        int maxVersionNumber = 0;
+        try {
+            for (const auto& entry: fs::directory_iterator(fileDir)) {
+                if (entry.is_regular_file()) {
+                    try {
+                        int versionNum = std::stoi(entry.path().filename());
+                        if (maxVersionNumber < versionNum) {
+                            maxVersionNumber = versionNum;
+                        }
+                    } catch (const std::invalid_argument& e) {
+                        // Not a version number
+                    }
+                }
+            }
+        } catch (const fs::filesystem_error& e) {
+            std::cerr << "Failed to get files in directory.\n";
+        }
+
+        int versionCount = abs(version);
+        if (versionCount > maxVersionNumber) {
+            std::cerr << "Not an available version.\n";
+            exit(1);
+        }
+        
+        fs::path reconstructionFile = fileDir / "reconstruction";
+        if (version < 0) {
+            // Output n versions before current
+            // Copy current file
+            command = "cp '" + (fileDir / "current").string() + "' '" + reconstructionFile.string() + "'";
+            system(command.c_str());
+            // Apply patches
+            for (int i = 0; i < versionCount; ++i) {
+                // Patch from restoration to maxVersionCount - i
+                command = "patch -s -R '" + reconstructionFile.string() + "' < '" + (fileDir / std::to_string(maxVersionNumber - i)).string() + "'";
+                system(command.c_str());
+            }
+            newLatestVersion = maxVersionNumber - versionCount;
+        } else {
+            // Output n versions after initial
+            // Copy initial file
+            command = "cp '" + (fileDir / "0").string() + "' '" + reconstructionFile.string() + "'";
+            system(command.c_str());
+            // Apply patches
+            // FILE* patchPipe;
+            for (int i = 1; i <= versionCount; ++i) {
+                // Patch from restoration to maxVersionCount - i
+                command = "patch -s '" + reconstructionFile.string() + "' '" + (fileDir / std::to_string(i)).string() + "'";
+                // patchPipe = popen(command.c_str(), "r");
+                // pclose(patchPipe);
+                system(command.c_str());
+            }
+            newLatestVersion = version;
+        }
+        // Replace current with reconstructed file
+        remove((fileDir / "current").c_str());
+        rename(reconstructionFile.c_str(), (fileDir / "current").c_str());
+        
+        // Remove all later versions
+        for (int i = newLatestVersion + 1; i <= maxVersionNumber; ++i) {
+            remove((fileDir / std::to_string(i)).c_str());
+        }
+    }
+}
+
 void FileSystemDisk::RemoveFile(FILE_INFO file)
 {
     std::string filename = file.name;

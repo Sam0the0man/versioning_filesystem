@@ -21,11 +21,10 @@ class FileSystemDisk {
         FileSystemDisk(std::string filesystemName=DEFAULT_FS);
         void createFile(std::string filename); // touch equivalent
         void editFile(std::string filename); // $EDITOR equivalent
-        // void SaveFile(FILE_INFO file);
         void deleteFile(std::string filename); // rm equivalent
-        void listFiles(); // ls equivalent
-        void viewFile(std::string filename, int version=-1); // cat equivalent
-        void viewAllVersions(std::string filename);
+        void listFiles() const; // ls equivalent
+        void viewFile(std::string filename, int version=0) const; // cat equivalent
+        void viewAllVersions(std::string filename) const;
         void restoreFile(std::string filename, int version); // res command
 
 
@@ -40,8 +39,11 @@ class FileSystemDisk {
 
         FILE_INFO CreateFile(std::string filename);
         void EditFile(FILE_INFO &file);
-        // void AddFile(FILE_INFO file);
         void RemoveFile(FILE_INFO file);
+        void ListFiles() const;
+        void ViewFile(std::string filename, int version) const;
+
+        void RestoreFile(std::string filename, int version);
 
         void UpdateBitmap(unsigned int block, bool allocated);
         FILE_ENTRY GetBlock(unsigned int block);
