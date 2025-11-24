@@ -10,12 +10,12 @@
 
 FileSystemDisk::FileSystemDisk(std::string filesystemName)
 {
-    this->filesystemName = filesystemName;
+    this->filesystemName = "." + filesystemName;
 
     fs::path homePath;
-    homePath = getenv("HOME");
+    homePath = getenv("VFS_FILESYSTEM_PATH");
     // Check if filesystem_name exists
-    this->diskPath = homePath / filesystemName;
+    this->diskPath = homePath / this->filesystemName;
     if (fs::is_directory(diskPath))
     {
         // If it does, load filesystem
@@ -265,10 +265,8 @@ void FileSystemDisk::EditFile(FILE_INFO &file) {
                 std::cerr << "Failed to open updated version file.\n";
                 exit(1);
             }
-            std::cout << buffer.empty() << '\n';
             while (fgets(buffer.data(), buffer.size(), pipe)) {
                 // diffOutput += buffer.data();
-                std::cout << buffer.data();
                 latest << buffer.data();
             }
             latest.close();
@@ -407,7 +405,7 @@ void FileSystemDisk::viewAllVersions(std::string filename) const {
         command = "patch -s '" + reconstructionFile.string() + "' '" + (fileDir / std::to_string(i)).string() + "'";
         system(command.c_str());
         // Output version and contents
-        std::cout << i << ": \n";
+        std::cout << i << ":" << std::endl;
         command = "cat '" + reconstructionFile.string() + "'";
         system(command.c_str());
     }
