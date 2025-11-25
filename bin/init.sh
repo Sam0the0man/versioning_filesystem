@@ -4,7 +4,7 @@ export VFS_FILESYSTEM_PATH="$PWD"
 export VFS_FILESYSTEM='versioning_filesystem'
 # Add bin to path
 export OLD_PATH="$PATH"
-export PATH="$PATH$PWD/bin:"
+export PATH="$PATH:$PWD/bin:"
 # Backup aliases
 save_alias() {
     local name="$1"

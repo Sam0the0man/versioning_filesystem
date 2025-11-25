@@ -2,9 +2,10 @@
 #ifndef DISK_LIBRARY_H
 #define DISK_LIBRARY_H
 
+#include <bitset>
 #include <filesystem>
-#include <string>
 #include <set>
+#include <string>
 #include "file.h"
 
 namespace fs = std::filesystem;

@@ -1,10 +1,13 @@
+#include <array>
 #include <filesystem>
 #include <bitset>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include "diskLibrary.h"
 #include "file.h"
 
@@ -49,8 +52,8 @@ void FileSystemDisk::CreateDisk()
     file.write(bitmapStr.c_str(), bitmapStr.length());
 
     // Allocate blocks
-    char *buffer = new char[BLOCK_SIZE];
-    memset(buffer, '0', BLOCK_SIZE);
+    // char *buffer = new char[BLOCK_SIZE];
+    // memset(buffer, '0', BLOCK_SIZE);
 
     // Ensure consistency in block allocation
     for (int i = 0; i < MAX_FILES; ++i)
@@ -60,7 +63,7 @@ void FileSystemDisk::CreateDisk()
         // file.write(buffer, BLOCK_SIZE);
     }
 
-    delete[] buffer;
+    // delete[] buffer;
     file.close();
 }
 void FileSystemDisk::LoadDisk()
@@ -123,7 +126,8 @@ FILE_INFO FileSystemDisk::CreateFile(std::string filename) {
     if (stat(fileDir.string().c_str(), &file_stat) == 0) {
         info.name = filename;
         info.identifier = file_stat.st_ino;
-        info.timestamp = file_stat.st_birthtimespec.tv_sec;
+        info.timestamp = file_stat.st_ctime;
+        // info.timestamp = file_stat.st_birthtimespec.tv_sec;
         info.size = file_stat.st_size;
     } else {
         std::cerr << "Error accessing file.\n";
@@ -282,7 +286,8 @@ void FileSystemDisk::EditFile(FILE_INFO &file) {
             if (stat(fileDir.c_str(), &file_stat) == 0) {
                 file.name = fileDir.filename().string();
                 file.identifier = file_stat.st_ino;
-                file.timestamp = file_stat.st_birthtimespec.tv_sec;
+                file.timestamp = file_stat.st_ctime;
+                // file.timestamp = file_stat.st_birthtimespec.tv_sec;
                 file.size = file_stat.st_size;
             } else {
                 std::cerr << "Error accessing file.\n";
