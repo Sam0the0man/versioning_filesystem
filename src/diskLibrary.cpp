@@ -6,68 +6,53 @@
 #include <fstream>
 #include <iostream>
 #include <unistd.h>
+#include <sstream>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include "diskLibrary.h"
-#include "file.h"
 
-FileSystemDisk::FileSystemDisk(std::string filesystemName)
-{
+FileSystemDisk::FileSystemDisk(std::string filesystemName) {
     this->filesystemName = "." + filesystemName;
 
     fs::path homePath;
     homePath = getenv("VFS_FILESYSTEM_PATH");
     // Check if filesystem_name exists
     this->diskPath = homePath / this->filesystemName;
-    if (fs::is_directory(diskPath))
-    {
+    if (fs::is_directory(diskPath)) {
         // If it does, load filesystem
         LoadDisk();
-    }
-    else
-    {
+    } else {
         // If not, create filesystem
         CreateDisk();
         LoadDisk();
     }
-
-    // std::cout << this->fileBitmap << '\n';
 }
 
-void FileSystemDisk::CreateDisk()
-{
+void FileSystemDisk::CreateDisk() {
     // Create directory called filesystemName
     fs::create_directory(diskPath);
     // Create file called filesystemName
     std::ofstream file(diskPath / filesystemName);
-    if (file.fail())
-    {
+    if (file.fail()) {
         std::cerr << "Filesystem could not be created.";
         exit(1);
     }
     // Write bitmap to allocate data at the beginning of the resulting string
-    // this->fileBitmap[MAX_FILES - 1] = 1;
     this->fileBitmap[0] = 1;
     std::string bitmapStr = this->fileBitmap.to_string();
     file.write(bitmapStr.c_str(), bitmapStr.length());
 
     // Allocate blocks
-    // char *buffer = new char[BLOCK_SIZE];
-    // memset(buffer, '0', BLOCK_SIZE);
 
     // Ensure consistency in block allocation
-    for (int i = 0; i < MAX_FILES; ++i)
-    {
-        // TODO: Correct block allocation for file information
+    for (int i = 0; i < MAX_FILES; ++i) {
+        // Correct block allocation for file information
         file.write("\n\0", 2);
-        // file.write(buffer, BLOCK_SIZE);
     }
 
-    // delete[] buffer;
     file.close();
 }
-void FileSystemDisk::LoadDisk()
-{
+void FileSystemDisk::LoadDisk() {
     // Load filesystemName
     std::ifstream file(this->diskPath / this->filesystemName);
     if (file.fail())
@@ -85,12 +70,7 @@ void FileSystemDisk::LoadDisk()
         bitmapStr = bitmapStr.substr(pos);
     }
     this->fileBitmap = std::bitset<MAX_FILES + 1>(bitmapStr.substr(0, MAX_FILES + 1));
-    // Load set of filled bits
-    for (int i = 1; i < MAX_FILES + 1; ++i) {
-        if (this->fileBitmap.test(i)) {
-            this->setBits.insert(i);
-        }
-    }
+
     file.close();
 }
 
@@ -99,6 +79,20 @@ void FileSystemDisk::createFile(std::string filename) {
 }
 FILE_INFO FileSystemDisk::CreateFile(std::string filename) {
     fs::path fileDir = this->diskPath / filename;
+
+    unsigned int block = this->FindBlock(filename);
+    if (block != -1) {
+        // File already exists
+        FILE_INFO file = this->ReadBlock(block);
+        return file;
+    }
+
+    block = this->GetNextFreeBlock();
+    if (block == -1) {
+        // No free blocks, filesystem is full
+        std::cerr << "You have reached your maximum number of files...\n";
+        exit(1);
+    }
 
     try {
         if (fs::create_directory(fileDir)) {
@@ -121,62 +115,10 @@ FILE_INFO FileSystemDisk::CreateFile(std::string filename) {
     }
 
     // Get file info
-    FILE_INFO info;
-    struct stat file_stat;
-    if (stat(fileDir.string().c_str(), &file_stat) == 0) {
-        info.name = filename;
-        info.identifier = file_stat.st_ino;
-        info.timestamp = file_stat.st_ctime;
-        // info.timestamp = file_stat.st_birthtimespec.tv_sec;
-        info.size = file_stat.st_size;
-    } else {
-        std::cerr << "Error accessing file.\n";
-        exit(1);
-    }
+    FILE_INFO info = this->GetFileInfo(filename);
     // Update bitmap
-    unsigned int block = (info.identifier % MAX_FILES) + 1;
-    // Check for collision
-    if (this->setBits.find(block) != this->setBits.end()) {
-        // Collision detected
-        // Rehash
-    } else {
-        this->UpdateBitmap(block, true);
-        this->setBits.insert(block);
-    }
-    // Write inode in correct location
-    // 1) Open original file (read) and create temporary file (write)
-    std::string originalName = fs::path(this->diskPath / filesystemName).string();
-    std::string tempName = fs::path(this->diskPath / "temp").string();
-
-    std::ifstream original(originalName);
-    std::ofstream temp(tempName);
-    if (!original.is_open() || !temp.is_open()) {
-        std::cerr << "Could not update filesystem.\n";
-        fs::remove_all(fileDir);
-        exit(1);
-    }
-
-    // 2) Get to correct line
-    int currentLine = 0;
-    std::string line;
-    while (std::getline(original, line) && currentLine < MAX_FILES) {
-        ++currentLine;
-        if (currentLine == (block + 1)) { // + 1 so it doesn't overwrite bitmap
-            // Write inode and name
-            temp << info.identifier << '\t' << info.name << '\n';
-        } else {
-            // 3) Write everything else
-            temp << line << '\n';
-        }
-    }
-    temp << line;
-
-    original.close();
-    temp.close();
-    // 4) Replace the original with the temporary file
-    remove(originalName.c_str());
-    rename(tempName.c_str(), originalName.c_str());
-
+    this->UpdateBitmap(block, true);
+    this->UpdateFileSystem(block, info);
     return info;
 }
 
@@ -185,12 +127,13 @@ void FileSystemDisk::editFile(std::string filename) {
     this->EditFile(info);
 }
 void FileSystemDisk::EditFile(FILE_INFO &file) {
-    fs::path fileDir = this->diskPath / file.name;
-    if (!std::filesystem::is_directory(fileDir)) {
+    int block = this->FindBlock(file.name);
+    if (block == -1) {
         // Check if file exists, create if it doesn't
         FILE_INFO createdFile = this->CreateFile(file.name);
         this->EditFile(createdFile);
     } else {
+        fs::path fileDir = this->diskPath / file.name;
         fs::path cwd;
         int maxVersionNumber = 0;
         try {
@@ -221,7 +164,6 @@ void FileSystemDisk::EditFile(FILE_INFO &file) {
         int child_status;
         if (child_pid < 0) {
             std::cerr << "Failed to open editor.\n";
-            // exit(1);
         } else if (child_pid == 0) {
             char *args[3];
             args[0] = strdup(getenv("EDITOR"));
@@ -270,7 +212,6 @@ void FileSystemDisk::EditFile(FILE_INFO &file) {
                 exit(1);
             }
             while (fgets(buffer.data(), buffer.size(), pipe)) {
-                // diffOutput += buffer.data();
                 latest << buffer.data();
             }
             latest.close();
@@ -281,17 +222,27 @@ void FileSystemDisk::EditFile(FILE_INFO &file) {
             if (diffStatus == 0) {
                 remove(latestFile); // No changes made
             }
-            // Update file info
-            struct stat file_stat;
-            if (stat(fileDir.c_str(), &file_stat) == 0) {
-                file.name = fileDir.filename().string();
-                file.identifier = file_stat.st_ino;
-                file.timestamp = file_stat.st_ctime;
-                // file.timestamp = file_stat.st_birthtimespec.tv_sec;
-                file.size = file_stat.st_size;
-            } else {
-                std::cerr << "Error accessing file.\n";
-                exit(1);
+            FILE_INFO old_info = this->ReadBlock(block);
+            file = this->GetFileInfo(file.name);
+            // Allocate new blocks if file size is larger than block size
+            // Remove blocks if file size is smaller than previously required blocks
+            int newBlocks = file.size / BLOCK_SIZE + 1;
+            file.blockCount = newBlocks;
+            this->UpdateFileSystem(block, file);
+            if (newBlocks > old_info.blockCount) {
+                for (int i = old_info.blockCount; i < newBlocks; ++i) {
+                    unsigned int nextBlock = this->GetNextFreeBlock();
+                    if (nextBlock < 1) {
+                        break;
+                    }
+                    this->UpdateBitmap(nextBlock, true);
+                    this->UpdateFileSystem(nextBlock, file);
+                }
+            } else if (newBlocks < old_info.blockCount) {
+                for (int i = old_info.blockCount; i > newBlocks && i > 0; --i) {
+                    unsigned int unusedBlock = this->FindBlock(file.name);
+                    this->UpdateBitmap(unusedBlock, false);
+                }
             }
         }
     }
@@ -305,11 +256,34 @@ void FileSystemDisk::listFiles() const {
     this->ListFiles();
 }
 void FileSystemDisk::ListFiles() const {
-    for (const auto& entry: fs::directory_iterator(this->diskPath)) {
-        if (entry.is_directory()) {
-            std::cout << entry.path().filename().string() << '\n';
+    // Load filesystemName
+    std::ifstream file(this->diskPath / this->filesystemName);
+    if (file.fail()) {
+        std::cerr << "Filesystem not found.";
+        exit(1);
+    }
+    // Read file
+    unsigned int currentBlock = 0;
+    std::string line;
+    std::string id, name, size;
+    char tab;
+    std::set<std::string> seenFiles;
+    std::getline(file, line); // Ignore bitmap
+    while (std::getline(file, line) && currentBlock <= MAX_FILES) {
+        ++currentBlock;
+        // Process current block info
+        if (!this->fileBitmap.test(currentBlock)) { // Block not in use
+            continue;
+        } else {
+            // Process file entry
+            std::istringstream info(line);
+            info >> id >> name >> size;
+            if (seenFiles.find(id) == seenFiles.end()) {
+                std::cout << name << '\n';
+                seenFiles.insert(id);
+            }
         }
-    } 
+    }
 }
 void FileSystemDisk::viewFile(std::string filename, int version) const {
     this->ViewFile(filename, version);
@@ -317,7 +291,7 @@ void FileSystemDisk::viewFile(std::string filename, int version) const {
 void FileSystemDisk::ViewFile(std::string filename, int version) const {
     std::string command;
     fs::path fileDir = this->diskPath / filename;
-    if (!fs::exists(fileDir)) {
+    if (this->FindBlock(filename) == -1) {
         std::cerr << "File does not exist.\n";
         exit(1);
     }
@@ -417,7 +391,6 @@ void FileSystemDisk::viewAllVersions(std::string filename) const {
 
     // Cleanup
     remove(reconstructionFile.c_str());
-
 }
 
 void FileSystemDisk::restoreFile(std::string filename, int version) {
@@ -427,7 +400,7 @@ void FileSystemDisk::RestoreFile(std::string filename, int version) {
     std::string command;
     fs::path fileDir = this->diskPath / filename;
     int newLatestVersion;
-    if (!fs::exists(fileDir)) {
+    if (this->FindBlock(filename) == -1) {
         std::cerr << "File does not exist.\n";
         exit(1);
     }
@@ -479,18 +452,14 @@ void FileSystemDisk::RestoreFile(std::string filename, int version) {
             command = "cp '" + (fileDir / "0").string() + "' '" + reconstructionFile.string() + "'";
             system(command.c_str());
             // Apply patches
-            // FILE* patchPipe;
             for (int i = 1; i <= versionCount; ++i) {
                 // Patch from restoration to maxVersionCount - i
                 command = "patch -s '" + reconstructionFile.string() + "' '" + (fileDir / std::to_string(i)).string() + "'";
-                // patchPipe = popen(command.c_str(), "r");
-                // pclose(patchPipe);
                 system(command.c_str());
             }
             newLatestVersion = version;
         }
         // Replace current with reconstructed file
-        remove((fileDir / "current").c_str());
         rename(reconstructionFile.c_str(), (fileDir / "current").c_str());
         
         // Remove all later versions
@@ -500,57 +469,26 @@ void FileSystemDisk::RestoreFile(std::string filename, int version) {
     }
 }
 
-void FileSystemDisk::RemoveFile(FILE_INFO file)
-{
-    std::string filename = file.name;
+void FileSystemDisk::RemoveFile(FILE_INFO file) {
     // Find file
     fs::path fileDir = this->diskPath / file.name;
-    unsigned int block = file.identifier % static_cast<unsigned long>(MAX_FILES) + 1; // Temporary test value, update to hash function later
+    unsigned int block = this->FindBlock(file.name);
     // Check for file
-    if (!fs::remove_all(fileDir)) {
+    if (block == -1) {
         std::cerr << "Failed to remove file.";
         exit(1);
     }
 
-    this->UpdateBitmap(block, false);
-    this->setBits.erase(block);
-   // 1) Open original file (read) and create temporary file (write)
-    std::string originalName = fs::path(this->diskPath / filesystemName).string();
-    std::string tempName = fs::path(this->diskPath / "temp").string();
-
-    std::ifstream original(originalName);
-    std::ofstream temp(tempName);
-    if (!original.is_open() || !temp.is_open()) {
-        std::cerr << "Could not update filesystem.\n";
-        fs::remove_all(fileDir);
-        exit(1);
+    // Update bitmap
+    while (block != -1) {
+        this->UpdateBitmap(block, false);
+        block = this->FindBlock(file.name);
     }
-
-    // 2) Get to correct line
-    int currentLine = 0;
-    std::string line;
-    while (std::getline(original, line) && currentLine < MAX_FILES) {
-        ++currentLine;
-        if (currentLine == (block + 1)) { // + 1 so it doesn't overwrite bitmap
-            // Remove inode and name
-            temp << '\0' << '\n';
-        } else {
-            // 3) Write everything else
-            temp << line << '\n';
-        }
-    }
-    temp << line;
-
-    original.close();
-    temp.close();
-    // 4) Replace the original with the temporary file
-    remove(originalName.c_str());
-    rename(tempName.c_str(), originalName.c_str()); 
+    fs::remove_all(fileDir);
 }
-void FileSystemDisk::UpdateBitmap(unsigned int block, bool allocated)
-{
-    this->fileBitmap[block - 1] = allocated;
 
+void FileSystemDisk::UpdateBitmap(unsigned int block, bool allocated) {
+    this->fileBitmap[block] = allocated;
     // Write bitmap to file
     // 1) Open original file (read) and create temporary file (write)
     std::string originalName = fs::path(this->diskPath / filesystemName).string();
@@ -577,21 +515,149 @@ void FileSystemDisk::UpdateBitmap(unsigned int block, bool allocated)
     original.close();
     temp.close();
     // 4) Replace the original with the temporary file
-    remove(originalName.c_str());
     rename(tempName.c_str(), originalName.c_str());
-    // std::ofstream file(diskPath / filesystemName);
-    // if (file.fail())
-    // {
-    //     std::cerr << "Filesystem could not be created.";
-    //     exit(1);
-    // }
 }
-FILE_ENTRY FileSystemDisk::GetBlock(unsigned int block) {
-    // Maybe repurpose to find block
-    // Given a filename, iterate through set bits and match the file name
-    // Return the inode at the found block or the correct block
+void FileSystemDisk::UpdateFileSystem(unsigned int block, FILE_INFO file) {
+     // 1) Open original file (read) and create temporary file (write)
+    std::string originalName = fs::path(this->diskPath / filesystemName).string();
+    std::string tempName = fs::path(this->diskPath / "temp").string();
 
+    std::ifstream original(originalName);
+    std::ofstream temp(tempName);
+    if (!original.is_open() || !temp.is_open()) {
+        std::cerr << "Could not update filesystem.\n";
+        exit(1);
+    }
 
-    // Return the FILE_ENTRY at the associated block number
-    return FILE_ENTRY{0, block};
+    // 2) Get to correct line
+    int currentLine = 0;
+    std::string line;
+    while (std::getline(original, line) && currentLine < MAX_FILES) {
+        ++currentLine;
+        if (currentLine == (block + 1)) { // + 1 so it doesn't overwrite bitmap
+                                          // Write identifier, name, size, block count
+            temp << file.identifier << '\t' << file.name << '\t' << file.size << '\t' << file.blockCount << '\n';
+        } else {
+            // 3) Write everything else
+            temp << line << '\n';
+        }
+    }
+    if (block == MAX_FILES) {
+        temp << file.identifier << '\t' << file.name << '\t' << file.size << '\t' << file.blockCount;
+    } else {
+        temp << line;
+    }
+    original.close();
+    temp.close();
+    // 4) Replace the original with the temporary file
+    rename(tempName.c_str(), originalName.c_str());
+}
+
+FILE_INFO FileSystemDisk::GetFileInfo(const std::string& filename) const {
+    fs::path fileDir = this->diskPath / filename;
+    FILE_INFO file;
+    // Update file info
+    struct stat file_stat;
+    if (stat(fileDir.c_str(), &file_stat) == 0) {
+        file.name = fileDir.filename().string();
+        file.identifier = file_stat.st_ino;
+        #if defined(__APPLE__)
+        // if (strcmp(SYSTEM_NAME, "macOS") == 0) {
+            file.timestamp = file_stat.st_birthtimespec.tv_sec;
+        #elif defined(_WIN32)
+            file.timestamp = 0; // Not supported
+        #else
+        // } else if (strcmp(SYSTEM_NAME, "Linux") == 0) {
+            file.timestamp = file_stat.st_ctime;
+        // }
+        #endif
+        // Get total size of all files in directory
+        std::string result = "";
+        std::string command = "du -s '" + fileDir.string() + "'";
+        FILE* pipe = popen(command.c_str(), "r"); // Open pipe for reading
+        if (!pipe) {
+            std::cerr << "Failed to get size.\n";
+            exit(1);
+        }
+
+        char buffer[128]; // Buffer to read chunks of output
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            result += buffer;
+        }
+
+        pclose(pipe); // Close the pipe
+        std::istringstream size_info(result);
+        size_info >> file.size;
+        file.blockCount = 1;
+    } else {
+        std::cerr << "Error accessing file.\n";
+        exit(1);
+    }
+    return file;
+}
+int FileSystemDisk::GetNextFreeBlock() const {
+    for (unsigned int i = 1; i <= MAX_FILES; ++i) {
+        if (!this->fileBitmap.test(i)) {
+            return i;
+        }
+    }
+    return -1; // No free blocks
+}
+int FileSystemDisk::FindBlock(const std::string& filename) const {
+    // Load filesystemName
+    std::ifstream file(this->diskPath / this->filesystemName);
+    if (file.fail()) {
+        std::cerr << "Filesystem not found.";
+        exit(1);
+    }
+    // Read file
+    unsigned int currentBlock = 0;
+    std::string line;
+    std::string id, name, size;
+    char tab;
+    std::getline(file, line); // Ignore bitmap
+    while (std::getline(file, line) && currentBlock <= MAX_FILES) {
+        ++currentBlock;
+        // Process current block info
+        if (!this->fileBitmap.test(currentBlock)) { // Block not in use
+            continue;
+        } else {
+            // Process file entry
+            std::istringstream info(line);
+            info >> id >> name >> size;
+            
+            if (name == filename) {
+                return currentBlock;
+            }
+        }
+    }
+
+    return -1; // File not found
+}
+FILE_INFO FileSystemDisk::ReadBlock(unsigned int block) const {
+    // Load filesystemName
+    std::ifstream file(this->diskPath / this->filesystemName);
+    if (file.fail()) {
+        std::cerr << "Filesystem not found.";
+        exit(1);
+    }
+    FILE_INFO info;
+
+    unsigned int currentBlock = 0;
+    std::string line;
+    unsigned long identifier;
+    std::string name;
+    size_t size;
+    std::getline(file, line); // Ignore bitmap
+    while (std::getline(file, line) && currentBlock <= MAX_FILES) {
+        ++currentBlock;
+        // Process current block info
+        if (currentBlock == block) { // Return file info
+            // Process file entry
+            std::istringstream file_info(line);
+            file_info >> info.identifier >> info.name >> info.size >> info.blockCount;
+            break;
+        }
+    }
+    return info;
 }

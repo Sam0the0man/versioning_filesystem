@@ -37,11 +37,17 @@ int main(int argc, char **argv) {
         }
         std::string filename(argv[2]);
         if (command == "create") {
-            disk.createFile(filename);
+            for (int i = 2; i < argc; ++i) {
+                filename = std::string(argv[i]);
+                disk.createFile(filename);
+            }                
         } else if (command == "edit") {
             disk.editFile(filename);
         } else if (command == "remove") {
-            disk.deleteFile(filename);
+            for (int i = 2; i < argc; ++i) {
+                filename = std::string(argv[i]);
+                disk.deleteFile(filename);
+            }
         } else {
             // Check for version
             std::string option;

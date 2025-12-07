@@ -1,4 +1,4 @@
-.PHONY: all clean init deinit
+.PHONY: install clean
 vpath %.h $(INCLUDE_DIR)
 
 TARGET_EXEC := vfs
@@ -16,26 +16,11 @@ OBJS := $(SRCS:%.cpp=$(BUILD_DIR)/%.o)
 CXX = g++
 CXXFLAGS = --std=c++17 $(INC_FLAGS)
 SHELL := $(shell command -v zsh || command -v bash)
-# SHELL = /bin/bash
 
 
-all: $(BIN_DIR)/$(TARGET_EXEC)
+install: $(BIN_DIR)/$(TARGET_EXEC)
 	@echo "Run 'source $(BIN_DIR)/init.sh' to launch filesystem."
-
-run: all
-	$(BIN_DIR)/$(TARGET_EXEC)
-
-# ifeq ($(origin VFS_FILESYSTEM_PATH), undefined)
-# 	@. $(BIN_DIR)/init.sh
-# endif
-# ifeq ($(origin VFS_FILESYSTEM), undefined)
-# 	@. $(BIN_DIR)/init.sh
-# endif
-
-# init:
-# 	@. $(BIN_DIR)/init.sh
-# deinit:
-# 	@. $(BIN_DIR)/deinit.sh
+	@echo "Run 'source $(BIN_DIR)/deinit.sh' to restore shell."
 
 $(BIN_DIR)/$(TARGET_EXEC): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $@
@@ -61,4 +46,3 @@ clean:
 		rm "$(BIN_DIR)/$(TARGET_EXEC)"; \
 	fi
 	@echo "Run 'source $(BIN_DIR)/deinit.sh' to restore shell."
-# 	@. $(BIN_DIR)/deinit.sh
