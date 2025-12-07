@@ -14,6 +14,14 @@ const int BLOCK_SIZE = 4096;
 const std::string DEFAULT_FS = "default";
 const int MAX_FILES = 255;
 
+#if defined(_WIN32)
+constexpr const char* SYSTEM_NAME = "Windows";
+#elif defined(__APPLE__)
+constexpr const char* SYSTEM_NAME = "macOS";
+#else
+constexpr const char* SYSTEM_NAME = "Linux";
+#endif
+
 
 
 class FileSystemDisk {
@@ -46,6 +54,10 @@ class FileSystemDisk {
         void RestoreFile(std::string filename, int version);
 
         void UpdateBitmap(unsigned int block, bool allocated);
-        FILE_ENTRY GetBlock(unsigned int block);
+        void UpdateFileSystem(unsigned int block, FILE_INFO file);
+        FILE_INFO GetFileInfo(const std::string& filename) const;
+        unsigned int GetNextFreeBlock() const;
+        unsigned int FindBlock(const std::string &filename) const;
+        FILE_INFO ReadBlock(unsigned int block) const;
 };
 #endif
